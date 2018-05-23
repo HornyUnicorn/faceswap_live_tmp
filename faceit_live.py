@@ -382,7 +382,6 @@ if __name__ == '__main__':
         FaceIt.add_model(faceit)
         parser = argparse.ArgumentParser()
 
-    if 0:
         parser.add_argument('task', choices = ['preprocess', 'train', 'convert','live','webcam'])
         parser.add_argument('model', choices = FaceIt.MODELS.keys())
         parser.add_argument('video', nargs = '?')
@@ -397,6 +396,7 @@ if __name__ == '__main__':
         args = parser.parse_args()
 
         faceit = FaceIt.MODELS[args.model]
+    if 0:
         
         if args.task == 'preprocess':
             faceit.preprocess()
