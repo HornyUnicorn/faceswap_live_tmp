@@ -254,6 +254,7 @@ class FaceIt:
             if convert_colors:                    
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Swap RGB to BGR to work with OpenCV
             return frame
+
         def _convert_helper(get_frame, t):
             return _convert_frame(get_frame(t))
 
@@ -291,61 +292,6 @@ class FaceIt:
 
             cv2.destroyAllWindows()
             exit()
-
-        media_path = self._video_path({ 'name' : video_file })
-        if not photos:
-            # Process video; start loading the video clip
-            video = VideoFileClip(media_path)
-
-            # If a duration is set, trim clip
-            if duration:
-                video = video.subclip(start_time, start_time + duration)
-            
-            # Resize clip before processing
-            if width:
-                video = video.resize(width = width)
-
-            # Crop clip if desired
-            if crop_x:
-                video = video.fx(crop, x2 = video.w / 2)
-
-            # Kick off convert frames for each frame
-            new_video = video.fl(_convert_helper)
-
-            # Stack clips side by side
-            if side_by_side:
-                def add_caption(caption, clip):
-                    text = (TextClip(caption, font='Amiri-regular', color='white', fontsize=80).
-                            margin(40).
-                            set_duration(clip.duration).
-                            on_color(color=(0,0,0), col_opacity=0.6))
-                    return CompositeVideoClip([clip, text])
-                video = add_caption("Original", video)
-                new_video = add_caption("Swapped", new_video)                
-                final_video = clips_array([[video], [new_video]])
-            else:
-                final_video = new_video
-
-            # Resize clip after processing
-            #final_video = final_video.resize(width = (480 * 2))
-
-            # Write video
-            if not os.path.exists(os.path.join(self.OUTPUT_PATH)):
-                os.makedirs(self.OUTPUT_PATH)
-            output_path = os.path.join(self.OUTPUT_PATH, video_file)
-            final_video.write_videofile(output_path, rewrite_audio = True)
-            
-            # Clean up
-            del video
-            del new_video
-            del final_video
-        else:
-            # Process a directory of photos
-            for face_file in os.listdir(media_path):
-                face_path = os.path.join(media_path, face_file)
-                image = cv2.imread(face_path)
-                image = _convert_frame(image, convert_colors = False)
-                cv2.imwrite(os.path.join(self.OUTPUT_PATH, face_file), image)
 
 class FaceSwapInterface:
     def __init__(self):
@@ -396,6 +342,10 @@ if __name__ == '__main__':
         args = parser.parse_args()
 
         faceit = FaceIt.MODELS[args.model]
+
+        print(args.task)
+
+
     if 0:
         
         if args.task == 'preprocess':
@@ -407,7 +357,9 @@ if __name__ == '__main__':
                 print('Need a video to convert. Some ideas: {}'.format(", ".join([video['name'] for video in faceit.all_videos()])))
             else:
                 faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side)
+        # ----------------------------------------
         elif args.task == 'live':
                 faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side, live = True, webcam = False)
+        # ----------------------------------------
         elif args.task == 'webcam':
                 faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side, live = True, webcam = True)
