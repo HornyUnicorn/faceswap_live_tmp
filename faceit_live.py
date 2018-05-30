@@ -1,23 +1,19 @@
 import os
 from argparse import Namespace
 import argparse
+import youtube_dl
 import cv2
 import time
 import tqdm
 import numpy
-
-from PIL import Image
-import face_recognition
-
-# -----------------------------------------
-# import pyfakewebcam
-# import youtube_dl
-
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 from moviepy.video.fx.all import crop
 from moviepy.editor import AudioFileClip, clips_array, TextClip, CompositeVideoClip
-# -----------------------------------------
+
+from PIL import Image
+import face_recognition
+import pyfakewebcam
 
 import shutil
 from pathlib import Path
@@ -33,7 +29,6 @@ from plugins.PluginLoader import PluginLoader
 from lib.FaceFilter import FaceFilter
 
 class FaceIt:
-
     VIDEO_PATH = 'data/videos'
     PERSON_PATH = 'data/persons'
     PROCESSED_PATH = 'data/processed'
@@ -46,7 +41,6 @@ class FaceIt:
         FaceIt.MODELS[model._name] = model
     
     def __init__(self, name, person_a, person_b):
-
         def _create_person_data(person):
             return {
                 'name' : person,
@@ -254,37 +248,58 @@ class FaceIt:
             if convert_colors:                    
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Swap RGB to BGR to work with OpenCV
             return frame
-
         def _convert_helper(get_frame, t):
             return _convert_frame(get_frame(t))
 
-        if live:
-
+        if (live):
+            # generate dummy content for testing /dev/video1
+            #ffmpeg -f x11grab -s 640x480 -i :0.0+10,20 -vf format=pix_fmts=yuv420p -f v4l2 /dev/video1
             print("Staring live mode. Capturing video from webcam!")
             print("Press q to Quit")
+            # connect to webcam
+            # video_capture = cv2.VideoCapture(0)
+            # time.sleep(1)
 
-            video_capture = cv2.VideoCapture("./data/videos/pair_360p_cut.mp4")
-            time.sleep(1)
-
-            width = video_capture.get(3)  # float
-            height = video_capture.get(4) # float
-            print("video_source dimensions = {} x {}".format(width, height))
-                      
+            # width = video_capture.get(3)  # float
+            # height = video_capture.get(4) # float
+            # print("webcam dimensions = {} x {}".format(width,height))
+            
+            video_capture = cv2.VideoCapture('./data/videos/ale.mp4')
+            if (webcam):
+                # create fake webcam device
+                camera = pyfakewebcam.FakeWebcam('/dev/video1', 640, 480)
+                camera.print_capabilities()
+                print("Fake webcam created, try using appear.in on Firefox or  ")
+          
             # loop until user clicks 'q' to exit
             while True:
-
                 ret, frame = video_capture.read()
                 frame = cv2.resize(frame, (640, 480))
-                
                 # flip image, because webcam inverts it and we trained the model the other way! 
                 frame = cv2.flip(frame,1)
                 image = _convert_frame(frame, convert_colors = False)
-                
                 # flip it back
                 image = cv2.flip(image,1)
 
-                cv2.imshow('Video', image)
+                
+                if (webcam):
+                    time.sleep(1/30.0)
+                    # firefox needs RGB 
 
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) 
+                    # chrome and skype UYUV - not working at the
+
+                    # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) 
+                    # chrome and skype UYUV - not working at the moment
+                    # image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
+                    
+                    camera.schedule_frame(image)
+                    #print("writing to stream")
+
+                else:
+                    cv2.imshow('Video', image)
+                    #print("writing to screen")
+                    
                 # Hit 'q' on the keyboard to quit!
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     video_capture.release()
@@ -292,6 +307,61 @@ class FaceIt:
 
             cv2.destroyAllWindows()
             exit()
+
+        media_path = self._video_path({ 'name' : video_file })
+        if not photos:
+            # Process video; start loading the video clip
+            video = VideoFileClip(media_path)
+
+            # If a duration is set, trim clip
+            if duration:
+                video = video.subclip(start_time, start_time + duration)
+            
+            # Resize clip before processing
+            if width:
+                video = video.resize(width = width)
+
+            # Crop clip if desired
+            if crop_x:
+                video = video.fx(crop, x2 = video.w / 2)
+
+            # Kick off convert frames for each frame
+            new_video = video.fl(_convert_helper)
+
+            # Stack clips side by side
+            if side_by_side:
+                def add_caption(caption, clip):
+                    text = (TextClip(caption, font='Amiri-regular', color='white', fontsize=80).
+                            margin(40).
+                            set_duration(clip.duration).
+                            on_color(color=(0,0,0), col_opacity=0.6))
+                    return CompositeVideoClip([clip, text])
+                video = add_caption("Original", video)
+                new_video = add_caption("Swapped", new_video)                
+                final_video = clips_array([[video], [new_video]])
+            else:
+                final_video = new_video
+
+            # Resize clip after processing
+            #final_video = final_video.resize(width = (480 * 2))
+
+            # Write video
+            if not os.path.exists(os.path.join(self.OUTPUT_PATH)):
+                os.makedirs(self.OUTPUT_PATH)
+            output_path = os.path.join(self.OUTPUT_PATH, video_file)
+            final_video.write_videofile(output_path, rewrite_audio = True)
+            
+            # Clean up
+            del video
+            del new_video
+            del final_video
+        else:
+            # Process a directory of photos
+            for face_file in os.listdir(media_path):
+                face_path = os.path.join(media_path, face_file)
+                image = cv2.imread(face_path)
+                image = _convert_frame(image, convert_colors = False)
+                cv2.imwrite(os.path.join(self.OUTPUT_PATH, face_file), image)
 
 class FaceSwapInterface:
     def __init__(self):
@@ -321,45 +391,48 @@ class FaceSwapInterface:
 
 
 if __name__ == '__main__':
+    faceit = FaceIt('ale_to_oliver', 'ale', 'oliver')
+
+    faceit.add_video('ale', 'aleweb.webm')
+    faceit.add_video('ale', 'ale.mp4')
+    faceit.add_video('ale', 'myvideo2.webm')
+    faceit.add_video('ale', 'aleweb2.webm')
+
+    faceit.add_video('oliver', 'oliver_trumpcard.mp4', 'https://www.youtube.com/watch?v=JlxQ3IUWT0I')
+    faceit.add_video('oliver', 'oliver_taxreform.mp4', 'https://www.youtube.com/watch?v=g23w7WPSaU8')
+    faceit.add_video('oliver', 'oliver_zazu.mp4', 'https://www.youtube.com/watch?v=Y0IUPwXSQqg')
+    faceit.add_video('oliver', 'oliver_pastor.mp4', 'https://www.youtube.com/watch?v=mUndxpbufkg')
+    faceit.add_video('oliver', 'oliver_cookie.mp4', 'https://www.youtube.com/watch?v=H916EVndP_A')
+    faceit.add_video('oliver', 'oliver_lorelai.mp4', 'https://www.youtube.com/watch?v=G1xP2f1_1Jg')
 
 
-    if 1:
-        faceit = FaceIt('nancy_to_sid', 'nancy', 'sid')
-        FaceIt.add_model(faceit)
-        parser = argparse.ArgumentParser()
+    FaceIt.add_model(faceit)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('task', choices = ['preprocess', 'train', 'convert','live','webcam'])
+    parser.add_argument('model', choices = FaceIt.MODELS.keys())
+    parser.add_argument('video', nargs = '?')
+    parser.add_argument('--duration', type = int, default = None)
+    parser.add_argument('--photos', action = 'store_true', default = False)    
+    parser.add_argument('--swap-model', action = 'store_true', default = False)
+    parser.add_argument('--face-filter', action = 'store_true', default = False)
+    parser.add_argument('--start-time', type = int, default = 0)
+    parser.add_argument('--crop-x', type = int, default = None)
+    parser.add_argument('--width', type = int, default = None)
+    parser.add_argument('--side-by-side', action = 'store_true', default = False)    
+    args = parser.parse_args()
 
-        parser.add_argument('task', choices = ['preprocess', 'train', 'convert','live','webcam'])
-        parser.add_argument('model', choices = FaceIt.MODELS.keys())
-        parser.add_argument('video', nargs = '?')
-        parser.add_argument('--duration', type = int, default = None)
-        parser.add_argument('--photos', action = 'store_true', default = False)    
-        parser.add_argument('--swap-model', action = 'store_true', default = False)
-        parser.add_argument('--face-filter', action = 'store_true', default = False)
-        parser.add_argument('--start-time', type = int, default = 0)
-        parser.add_argument('--crop-x', type = int, default = None)
-        parser.add_argument('--width', type = int, default = None)
-        parser.add_argument('--side-by-side', action = 'store_true', default = False)    
-        args = parser.parse_args()
-
-        faceit = FaceIt.MODELS[args.model]
-
-        print(args.task)
-
-
-    if 0:
-        
-        if args.task == 'preprocess':
-            faceit.preprocess()
-        elif args.task == 'train':
-            faceit.train()
-        elif args.task == 'convert':
-            if not args.video:
-                print('Need a video to convert. Some ideas: {}'.format(", ".join([video['name'] for video in faceit.all_videos()])))
-            else:
-                faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side)
-        # ----------------------------------------
-        elif args.task == 'live':
-                faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side, live = True, webcam = False)
-        # ----------------------------------------
-        elif args.task == 'webcam':
-                faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side, live = True, webcam = True)
+    faceit = FaceIt.MODELS[args.model]
+    
+    if args.task == 'preprocess':
+        faceit.preprocess()
+    elif args.task == 'train':
+        faceit.train()
+    elif args.task == 'convert':
+        if not args.video:
+            print('Need a video to convert. Some ideas: {}'.format(", ".join([video['name'] for video in faceit.all_videos()])))
+        else:
+            faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side)
+    elif args.task == 'live':
+            faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side, live = True, webcam = False)
+    elif args.task == 'webcam':
+            faceit.convert(args.video, duration = args.duration, swap_model = args.swap_model, face_filter = args.face_filter, start_time = args.start_time, photos = args.photos, crop_x = args.crop_x, width = args.width, side_by_side = args.side_by_side, live = True, webcam = True)
