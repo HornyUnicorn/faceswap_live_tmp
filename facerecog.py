@@ -1603,6 +1603,44 @@ class getPostThread(QThread):
                 p1 = (int(bbox[0]), int(bbox[1]))
                 p2 = (int(bbox[0] + bbox[2]), int(bbox[1] + bbox[3]))
                 faces.append(bbox)
+
+                # =====================================================
+                if DEEPFAKES_MODEL_LOAD_OPT == 'queue':
+
+                    x1 = p1[0] - 20 if p1[0] >= 20 else 0
+                    y1 = p1[1] - 20 if p1[1] >= 20 else 0
+                    x2 = p2[0] + 20 if p2[0] < frame.shape[1] - 20 else frame.shape[1]
+                    y2 = p2[1] + 20 if p2[1] < frame.shape[0] - 20 else frame.shape[0]
+
+
+                    print('\nFRAME (track): {}'.format(frame.shape))
+                    print('FACES: {}\n'.format((x1,y1,x2,y2)))
+            
+                    face = frame[y1:y2, x1:x2]
+                    deepf_queues[0].put(cv2.flip(face, 1))
+                    print('PUT A FRAME (with flip)!')
+                
+                    while 1:
+                        try:
+                            image = deepf_queues[1].get()
+                            image = cv2.flip(image, 1)
+                            print('GOT AN IMAGE ... get_faces!')
+                            
+                            path = './data/deepf_face_{}.png'.format(self.frame_count)
+                            cv2.imwrite(path, image)
+
+                            if face.shape == image.shape:
+                                displayFrame[y1:y2, x1:x2] = image
+                                path = './data/deepf_frame_{}.png'.format(self.frame_count)
+                                cv2.imwrite(path, displayFrame)
+                            else:
+                                print(face.shape, image.shape)
+
+                            break
+                        except:
+                            pass
+                # =====================================================
+
                 if self.swaps[i]:
                     try:
                         tmp1 = (
@@ -2292,7 +2330,7 @@ class getPostThread(QThread):
                 # print(frame.shape, frame.dtype) # (360, 640, 3), dtype('uint8')
 
                 # -------------------------------------    
-                # deepf_queues[0].put(cv2.flip(frame, 1))
+                # deepf_queues[0].put(cv2.flip(frame, 1)) # for the case when we apply deepfakes on a full frame
                 
                 if detect_face:
                     x1, y1, x2, y2 = detect_face[0]
@@ -2311,10 +2349,18 @@ class getPostThread(QThread):
                         
                         image = cv2.flip(image, 1)
 
-                        path = './data/deepf_{}.png'.format(self.frame_count)
+                        path = './data/deepf_face_{}.png'.format(self.frame_count)
                         cv2.imwrite(path, image)
 
-                        # displayFrame = image
+                        # displayFrame = image # for the case when we apply deepfakes on a full frame
+
+                        if face.shape == image.shape:
+                            displayFrame[y1:y2, x1:x2] = image
+                            path = './data/deepf_frame_{}.png'.format(self.frame_count)
+                            cv2.imwrite(path, displayFrame)
+                        else:
+                            print(face.shape, image.shape)
+
                         break
                     except:
                         pass
